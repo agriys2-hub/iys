@@ -38,13 +38,12 @@ st.markdown("""
 # 2. 工具函数 (Helper Functions)
 # ==========================================
 
-def get_deepseek_client(api_key):
-    """初始化 DeepSeek 客户端 (逻辑大脑)"""
-    return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-
-def get_qwen_client(api_key):
-    """初始化通义千问客户端 (视觉之眼)"""
-    return OpenAI(api_key=api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+def get_client(api_key):
+    """
+    初始化硅基流动客户端
+    统一 Base URL: https://api.siliconflow.cn/v1
+    """
+    return OpenAI(api_key=api_key, base_url="https://api.siliconflow.cn/v1")
 
 def encode_image(image_file):
     """将上传的图片转换为 Base64 字符串"""
@@ -55,16 +54,17 @@ def encode_image(image_file):
 # ==========================================
 with st.sidebar:
     st.title("🎬 AI Director Studio")
-    st.caption("v1.0 MVP | AI 视频前期筹备全栈工具")
+    st.caption("Powered by SiliconFlow")
     
     st.markdown("---")
     st.subheader("🔑 API 配置")
     
-    ds_key = st.text_input("DeepSeek API Key", type="password", help="用于处理文本逻辑")
-    qw_key = st.text_input("Dashscope (通义) API Key", type="password", help="用于视觉理解")
+    # 硅基流动只需要一个 Key 就能调用所有模型
+    sf_key = st.text_input("SiliconFlow API Key", type="password", help="请前往硅基流动官网获取 sk- 开头的密钥")
     
     st.markdown("---")
-    st.info("💡 提示：所有数据仅在当前会话有效，刷新页面将重置。")
+    st.markdown("[👉 点击注册硅基流动获取 Key](https://cloud.siliconflow.cn/)")
+    st.info("💡 提示：本版本使用 DeepSeek-V3 处理文本，Qwen2-VL 处理图片。")
 
 # ==========================================
 # 4. 主界面逻辑 (Main Application Logic)
@@ -72,12 +72,15 @@ with st.sidebar:
 
 # 顶部标题
 st.markdown('<div class="main-header">AI Director Studio</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">基于国产大模型的智能导演工作台：从灵感到分镜，一站式生成。</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">基于国产大模型 (SiliconFlow 加速版) 的智能导演工作台</div>', unsafe_allow_html=True)
 
 # 检查 API Key
-if not ds_key or not qw_key:
-    st.warning("⚠️ 请先在左侧侧边栏输入 DeepSeek 和 Dashscope 的 API Key 以开始使用。")
+if not sf_key:
+    st.warning("⚠️ 请先在左侧侧边栏输入 SiliconFlow API Key 以开始使用。")
     st.stop()
+
+# 初始化统一的客户端
+client = get_client(sf_key)
 
 # 模块选择
 module = st.radio(
@@ -90,6 +93,7 @@ st.markdown("---")
 
 # -----------------------------------------------------------------------------
 # 模块一：视觉基因解码器 (Visual Gene Decoder)
+# 模型：Qwen/Qwen2-VL-72B-Instruct
 # -----------------------------------------------------------------------------
 if "视觉基因解码器" in module:
     st.subheader("👁️ 视觉基因解码器 (Visual Gene Decoder)")
@@ -104,15 +108,15 @@ if "视觉基因解码器" in module:
 
     with col2:
         if uploaded_file and st.button("开始解码基因", type="primary"):
-            client = get_qwen_client(qw_key)
             base64_image = encode_image(uploaded_file)
             
-            with st.spinner("Qwen-VL 正在分析光影与风格..."):
+            with st.spinner("Qwen2-VL 正在分析光影与风格..."):
                 try:
-                    # 系统提示词：图生文策略
+                    # 系统提示词
                     system_prompt = """
                     你是一个专业的视觉艺术导演。请分析这张图片。
-                    请严格返回 JSON 格式，包含以下字段：
+                    请严格返回 JSON 格式，不包含 markdown 格式标记（如 ```json），直接返回纯 JSON 字符串。
+                    包含以下字段：
                     - style_tags (list): 风格标签（如 Cyberpunk, Minimalist）
                     - lighting_analysis (string): 光影分析
                     - prompt_en (string): 针对 Midjourney/SDXL 优化的英文提示词
@@ -120,29 +124,28 @@ if "视觉基因解码器" in module:
                     """
                     
                     response = client.chat.completions.create(
-                        model="qwen-vl-max",
+                        model="Qwen/Qwen2-VL-72B-Instruct",  # 硅基流动支持的视觉模型
                         messages=[
-                            {
-                                "role": "system",
-                                "content": [{"type": "text", "text": system_prompt}]
-                            },
                             {
                                 "role": "user",
                                 "content": [
+                                    {"type": "text", "text": system_prompt},
                                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                                 ]
                             }
                         ],
+                        max_tokens=1024
                     )
                     
-                    # 简单清洗 JSON (防止 markdown 符号)
-                    content = response.choices[0].message.content.replace("```json", "").replace("```", "")
+                    # 清洗 JSON (以防万一模型输出了 markdown)
+                    content = response.choices[0].message.content
+                    content = content.replace("```json", "").replace("```", "").strip()
+                    
                     data = json.loads(content)
                     
                     # 结果展示
                     st.success("解码成功！")
                     
-                    # 风格标签卡片
                     st.markdown(f"""
                     <div class="card">
                         <h4>🏷️ 风格基因</h4>
@@ -151,7 +154,6 @@ if "视觉基因解码器" in module:
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # 提示词展示
                     tab_en, tab_cn = st.tabs(["🇺🇸 Midjourney/SDXL", "🇨🇳 可灵/混元"])
                     with tab_en:
                         st.code(data.get('prompt_en'), language="text")
@@ -160,9 +162,11 @@ if "视觉基因解码器" in module:
                         
                 except Exception as e:
                     st.error(f"解析失败: {e}")
+                    st.error("如果是 JSON 解析错误，请重试，这是大模型输出格式的偶发问题。")
 
 # -----------------------------------------------------------------------------
 # 模块二：AI 导演控制台 (Director Console)
+# 模型：deepseek-ai/DeepSeek-V3
 # -----------------------------------------------------------------------------
 elif "AI 导演控制台" in module:
     st.subheader("🎥 AI 导演控制台 (Director Console)")
@@ -179,10 +183,8 @@ elif "AI 导演控制台" in module:
         if not script_text:
             st.warning("请输入剧本内容。")
         else:
-            client = get_deepseek_client(ds_key)
             with st.spinner("DeepSeek 正在拆解剧本并设计运镜..."):
                 try:
-                    # 系统提示词：剧本转分镜策略
                     system_prompt = f"""
                     Role: Professional Film Director.
                     Task: Convert the script into a shot list JSON.
@@ -206,7 +208,7 @@ elif "AI 导演控制台" in module:
                     """
                     
                     response = client.chat.completions.create(
-                        model="deepseek-chat",
+                        model="deepseek-ai/DeepSeek-V3", # 硅基流动的 V3 模型 ID
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": script_text}
@@ -218,17 +220,13 @@ elif "AI 导演控制台" in module:
                     data = json.loads(content)
                     df = pd.DataFrame(data['shots'])
                     
-                    # 存入 Session State 防止重载丢失
                     st.session_state['director_df'] = df
                     
                 except Exception as e:
                     st.error(f"生成失败: {e}")
 
-    # 结果展示区
     if 'director_df' in st.session_state:
         st.markdown("### 🎬 分镜结果预览")
-        
-        # 可编辑表格
         edited_df = st.data_editor(
             st.session_state['director_df'],
             num_rows="dynamic",
@@ -239,18 +237,12 @@ elif "AI 导演控制台" in module:
                 "action": "画面内容"
             }
         )
-        
-        # CSV 下载
         csv = edited_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 下载 CSV 分镜表",
-            data=csv,
-            file_name='director_shot_list.csv',
-            mime='text/csv',
-        )
+        st.download_button(label="📥 下载 CSV 分镜表", data=csv, file_name='director_shot_list.csv', mime='text/csv')
 
 # -----------------------------------------------------------------------------
 # 模块三：IP 一致性实验室 (IP Consistency Lab)
+# 模型：deepseek-ai/DeepSeek-V3
 # -----------------------------------------------------------------------------
 elif "IP 一致性实验室" in module:
     st.subheader("🎨 IP 一致性实验室 (IP Consistency Lab)")
@@ -258,11 +250,11 @@ elif "IP 一致性实验室" in module:
     
     col1, col2 = st.columns(2)
     with col1:
-        char_desc = st.text_area("角色描述", placeholder="例如：一个20岁的赛博朋克女性黑客，银色短发，戴着发光的护目镜，身穿黑色皮夹克...")
+        char_desc = st.text_area("角色描述", placeholder="例如：一个20岁的赛博朋克女性黑客，银色短发...")
     with col2:
         style_tags = st.multiselect(
             "风格选择",
-            ["Pixar (皮克斯)", "Anime (日漫)", "Realistic (写实)", "Cyberpunk (赛博朋克)", "Oil Painting (油画)"],
+            ["Pixar (皮克斯)", "Anime (日漫)", "Realistic (写实)", "Cyberpunk (赛博朋克)"],
             default=["Realistic (写实)"]
         )
     
@@ -270,11 +262,9 @@ elif "IP 一致性实验室" in module:
         if not char_desc:
             st.warning("请描述角色特征。")
         else:
-            client = get_deepseek_client(ds_key)
             with st.spinner("DeepSeek 正在构建角色一致性数据..."):
                 try:
                     styles = ", ".join(style_tags)
-                    # 系统提示词：一致性策略
                     system_prompt = f"""
                     Role: Character Designer.
                     Task: Create a consistent 3-view reference sheet prompt based on user description.
@@ -287,7 +277,7 @@ elif "IP 一致性实验室" in module:
                     """
                     
                     response = client.chat.completions.create(
-                        model="deepseek-chat",
+                        model="deepseek-ai/DeepSeek-V3",
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": char_desc}
